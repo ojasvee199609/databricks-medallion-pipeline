@@ -1,0 +1,1 @@
+-- Gold layer query: sales aggregated by product.

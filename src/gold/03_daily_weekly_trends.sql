@@ -1,0 +1,1 @@
+-- Gold layer query: daily and weekly sales trend analysis.

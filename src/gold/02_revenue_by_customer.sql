@@ -1,0 +1,1 @@
+-- Gold layer query: revenue aggregated by customer.
