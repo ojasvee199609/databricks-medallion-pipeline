@@ -45,6 +45,11 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 
+# Local DBFS simulation and pipeline outputs
+dbfs/
+delta/
+spark-warehouse/
+
 # Local data files (keep required sample CSVs)
 data/*
 !data/customers.csv
