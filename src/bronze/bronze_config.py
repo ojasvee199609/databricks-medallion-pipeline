@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Pattern
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -74,6 +75,28 @@ USE_MANAGED_TABLES = os.environ.get(
     "BRONZE_USE_MANAGED_TABLES",
     "true" if _is_databricks_runtime() else "false",
 ).lower() == "true"
+
+# Source filename patterns — timestamped batches from generate_sample_data.py.
+# Examples: customers_20260826_143045.csv, orders_20260826_143045.csv
+FILE_TIMESTAMP_TOKEN = r"\d{8}_\d{6}"
+CUSTOMERS_SOURCE_FILENAME_PATTERN = re.compile(
+    os.environ.get(
+        "BRONZE_CUSTOMERS_FILE_PATTERN",
+        rf"^customers(?:_{FILE_TIMESTAMP_TOKEN})?\.csv$",
+    )
+)
+PRODUCTS_SOURCE_FILENAME_PATTERN = re.compile(
+    os.environ.get(
+        "BRONZE_PRODUCTS_FILE_PATTERN",
+        rf"^products(?:_{FILE_TIMESTAMP_TOKEN})?\.csv$",
+    )
+)
+ORDERS_SOURCE_FILENAME_PATTERN = re.compile(
+    os.environ.get(
+        "BRONZE_ORDERS_FILE_PATTERN",
+        rf"^orders(?:_{FILE_TIMESTAMP_TOKEN})?\.csv$",
+    )
+)
 
 CUSTOMERS_SOURCE_SCHEMA: StructTypeType = StructType(
     [
@@ -240,6 +263,15 @@ def get_dbutils(spark: SparkSession) -> Any:
         raise RuntimeError("Unable to initialize dbutils on Databricks.") from exc
 
 
+def resolve_to_process_folder() -> str:
+    """Build the DBFS path to the to_process staging folder.
+
+    Returns:
+        Full DBFS path to the pending-ingest folder.
+    """
+    return posixpath.join(DBFS_BASE_PATH.rstrip("/"), TO_PROCESS_FOLDER)
+
+
 def resolve_to_process_path(source_file: str) -> str:
     """Build the DBFS path to a CSV file in the to_process staging folder.
 
@@ -256,11 +288,87 @@ def resolve_to_process_path(source_file: str) -> str:
     )
 
 
+def list_to_process_filenames(spark: SparkSession) -> list[str]:
+    """List CSV filenames currently waiting in the to_process folder.
+
+    Args:
+        spark: Active Spark session.
+
+    Returns:
+        Sorted list of CSV basenames in the to_process folder.
+    """
+    folder = resolve_to_process_folder()
+
+    if is_databricks_runtime() and is_dbfs_path(folder):
+        dbutils = get_dbutils(spark)
+        try:
+            entries = dbutils.fs.ls(folder)
+        except Exception:
+            return []
+
+        filenames = [
+            entry.name
+            for entry in entries
+            if not entry.isDir() and entry.name.lower().endswith(".csv")
+        ]
+        return sorted(filenames)
+
+    local_folder = to_local_filesystem_path(folder)
+    if not local_folder.is_dir():
+        return []
+
+    return sorted(
+        path.name for path in local_folder.iterdir() if path.is_file() and path.suffix.lower() == ".csv"
+    )
+
+
+def find_pending_source_file(
+    spark: SparkSession,
+    filename_pattern: Pattern[str],
+    source_label: str,
+) -> tuple[str, str]:
+    """Find the oldest pending CSV in to_process that matches a source pattern.
+
+    Args:
+        spark: Active Spark session.
+        filename_pattern: Regex matched against CSV basenames.
+        source_label: Human-readable source label for error messages.
+
+    Returns:
+        Tuple of (full source path, source filename basename).
+
+    Raises:
+        FileNotFoundError: If no matching CSV exists in to_process.
+    """
+    matching_files = [
+        filename
+        for filename in list_to_process_filenames(spark)
+        if filename_pattern.match(filename)
+    ]
+
+    if not matching_files:
+        folder = resolve_to_process_folder()
+        raise FileNotFoundError(
+            f"No pending {source_label} file matching pattern "
+            f"'{filename_pattern.pattern}' in {folder}."
+        )
+
+    # Oldest batch first — timestamp suffix sorts lexicographically.
+    selected_file = matching_files[0]
+    if len(matching_files) > 1:
+        print(
+            f"[{source_label}] Multiple pending files matched; processing oldest: "
+            f"{selected_file} (queue size: {len(matching_files)})"
+        )
+
+    return resolve_to_process_path(selected_file), selected_file
+
+
 def resolve_processed_path(source_file: str) -> str:
     """Build the DBFS path to a CSV file in the processed archive folder.
 
     Args:
-        source_file: CSV filename (for example, ``customers.csv``).
+        source_file: CSV filename (for example, ``customers_20260826_143045.csv``).
 
     Returns:
         Full DBFS path to the archived source file.

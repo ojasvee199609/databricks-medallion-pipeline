@@ -8,13 +8,22 @@ individual failures, and prints a final summary with row counts and status.
 from __future__ import annotations
 
 import importlib.util
+import inspect
+import os
 import sys
 from pathlib import Path
 from typing import Callable
 
 from pyspark.sql import SparkSession
 
-BRONZE_DIR = Path(__file__).resolve().parent
+if os.environ.get("BRONZE_SRC_DIR"):
+    BRONZE_DIR = Path(os.environ["BRONZE_SRC_DIR"]).resolve()
+else:
+    try:
+        BRONZE_DIR = Path(__file__).resolve().parent
+    except NameError:
+        BRONZE_DIR = Path(inspect.currentframe().f_code.co_filename).resolve().parent
+
 if str(BRONZE_DIR) not in sys.path:
     sys.path.insert(0, str(BRONZE_DIR))
 

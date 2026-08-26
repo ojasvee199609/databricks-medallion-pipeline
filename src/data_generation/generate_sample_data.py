@@ -11,7 +11,7 @@ import argparse
 import csv
 import os
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -56,6 +56,27 @@ PRODUCT_CATEGORIES = (
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 DATA_OUTPUT_DIR_ENV_VAR = "DATA_OUTPUT_DIR"
+OUTPUT_FILENAME_TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
+
+
+def build_source_filenames(run_timestamp: datetime | None = None) -> dict[str, str]:
+    """Build timestamped CSV filenames for a single generation batch.
+
+    All three files in a run share the same timestamp so Bronze ingestion
+    can identify files from the same batch.
+
+    Args:
+        run_timestamp: Optional fixed timestamp for reproducible test runs.
+
+    Returns:
+        Mapping of logical source names to timestamped CSV filenames.
+    """
+    timestamp = (run_timestamp or datetime.now()).strftime(OUTPUT_FILENAME_TIMESTAMP_FORMAT)
+    return {
+        "customers": f"customers_{timestamp}.csv",
+        "products": f"products_{timestamp}.csv",
+        "orders": f"orders_{timestamp}.csv",
+    }
 
 def resolve_output_dir(output_dir: str | None = None) -> Path:
     """Resolve the directory where generated CSV files will be written.
@@ -92,6 +113,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Directory to write customers.csv, products.csv, and orders.csv. "
             f"Defaults to ${DATA_OUTPUT_DIR_ENV_VAR} env var, then {DEFAULT_DATA_DIR}."
+        ),
+    )
+    parser.add_argument(
+        "--file-timestamp",
+        default=None,
+        help=(
+            "Optional fixed timestamp suffix for output filenames "
+            "(format: YYYYMMDD_HHMMSS). Defaults to current time."
         ),
     )
     return parser.parse_args()
@@ -502,15 +531,19 @@ def print_summary(
         print(f"  {name}: {path}")
 
     print("\nTotal rows generated:")
-    print(f"  customers.csv: {len(customers):,}")
-    print(f"  products.csv:  {len(products):,}")
-    print(f"  orders.csv:    {len(orders):,}")
+    for logical_name, path in output_paths.items():
+        row_counts = {
+            "customers": len(customers),
+            "products": len(products),
+            "orders": len(orders),
+        }
+        print(f"  {path.name}: {row_counts[logical_name]:,}")
 
-    print("\nInjected data quality issues — customers.csv:")
+    print("\nInjected data quality issues — customers:")
     print(f"  NULL email:              {customer_issues['null_email']:,}")
     print(f"  Duplicate customer_id:   {customer_issues['duplicate_customer_id']:,}")
 
-    print("\nInjected data quality issues — orders.csv:")
+    print("\nInjected data quality issues — orders:")
     print(f"  NULL customer_id:        {order_issues['null_customer_id']:,}")
     print(f"  NULL product_id:         {order_issues['null_product_id']:,}")
     print(f"  Invalid customer_id:     {order_issues['invalid_customer_id']:,}")
@@ -519,11 +552,12 @@ def print_summary(
     print("=" * 60)
 
 
-def main(output_dir: str | None = None) -> None:
+def main(output_dir: str | None = None, file_timestamp: str | None = None) -> None:
     """Generate synthetic data files and write them to the configured output folder.
 
     Args:
         output_dir: Optional output directory override (CLI or programmatic).
+        file_timestamp: Optional fixed timestamp suffix for output filenames.
     """
     random.seed(RANDOM_SEED)
     fake = Faker()
@@ -532,6 +566,13 @@ def main(output_dir: str | None = None) -> None:
     data_dir = resolve_output_dir(output_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    run_timestamp = (
+        datetime.strptime(file_timestamp, OUTPUT_FILENAME_TIMESTAMP_FORMAT)
+        if file_timestamp
+        else None
+    )
+    source_filenames = build_source_filenames(run_timestamp)
+
     products = generate_products(fake)
     customers = generate_customers(fake)
     orders = generate_orders(customers, products, fake)
@@ -539,9 +580,9 @@ def main(output_dir: str | None = None) -> None:
     customers, customer_issues = inject_customer_data_quality_issues(customers)
     orders, order_issues = inject_order_data_quality_issues(orders)
 
-    customers_path = data_dir / "customers.csv"
-    products_path = data_dir / "products.csv"
-    orders_path = data_dir / "orders.csv"
+    customers_path = data_dir / source_filenames["customers"]
+    products_path = data_dir / source_filenames["products"]
+    orders_path = data_dir / source_filenames["orders"]
 
     write_products_csv(products, products_path)
     write_customers_csv(customers, customers_path)
@@ -554,13 +595,13 @@ def main(output_dir: str | None = None) -> None:
         customer_issues=customer_issues,
         order_issues=order_issues,
         output_paths={
-            "customers.csv": customers_path,
-            "products.csv": products_path,
-            "orders.csv": orders_path,
+            "customers": customers_path,
+            "products": products_path,
+            "orders": orders_path,
         },
     )
 
 
 if __name__ == "__main__":
     cli_args = parse_args()
-    main(output_dir=cli_args.output_dir)
+    main(output_dir=cli_args.output_dir, file_timestamp=cli_args.file_timestamp)
