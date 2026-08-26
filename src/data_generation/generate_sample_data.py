@@ -7,7 +7,9 @@ so the Silver layer has realistic defects to detect and flag.
 
 from __future__ import annotations
 
+import argparse
 import csv
+import os
 import random
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -52,7 +54,48 @@ PRODUCT_CATEGORIES = (
     "Automotive",
 )
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_OUTPUT_DIR_ENV_VAR = "DATA_OUTPUT_DIR"
+
+def resolve_output_dir(output_dir: str | None = None) -> Path:
+    """Resolve the directory where generated CSV files will be written.
+
+    Priority: CLI argument > environment variable > repository data/ default.
+
+    Args:
+        output_dir: Optional output directory override from the command line.
+
+    Returns:
+        Resolved output directory path.
+    """
+    if output_dir:
+        return Path(output_dir)
+    env_output_dir = os.environ.get(DATA_OUTPUT_DIR_ENV_VAR)
+    if env_output_dir:
+        return Path(env_output_dir)
+    return DEFAULT_DATA_DIR
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the data generation script.
+
+    Returns:
+        Parsed command-line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic e-commerce CSV files for the medallion pipeline."
+    )
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        default=None,
+        help=(
+            "Directory to write customers.csv, products.csv, and orders.csv. "
+            f"Defaults to ${DATA_OUTPUT_DIR_ENV_VAR} env var, then {DEFAULT_DATA_DIR}."
+        ),
+    )
+    return parser.parse_args()
+
 
 CUSTOMER_FIELDNAMES = [
     "customer_id",
@@ -476,13 +519,18 @@ def print_summary(
     print("=" * 60)
 
 
-def main() -> None:
-    """Generate synthetic data files and write them to the data/ folder."""
+def main(output_dir: str | None = None) -> None:
+    """Generate synthetic data files and write them to the configured output folder.
+
+    Args:
+        output_dir: Optional output directory override (CLI or programmatic).
+    """
     random.seed(RANDOM_SEED)
     fake = Faker()
     Faker.seed(RANDOM_SEED)
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    data_dir = resolve_output_dir(output_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     products = generate_products(fake)
     customers = generate_customers(fake)
@@ -491,9 +539,9 @@ def main() -> None:
     customers, customer_issues = inject_customer_data_quality_issues(customers)
     orders, order_issues = inject_order_data_quality_issues(orders)
 
-    customers_path = DATA_DIR / "customers.csv"
-    products_path = DATA_DIR / "products.csv"
-    orders_path = DATA_DIR / "orders.csv"
+    customers_path = data_dir / "customers.csv"
+    products_path = data_dir / "products.csv"
+    orders_path = data_dir / "orders.csv"
 
     write_products_csv(products, products_path)
     write_customers_csv(customers, customers_path)
@@ -514,4 +562,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    cli_args = parse_args()
+    main(output_dir=cli_args.output_dir)

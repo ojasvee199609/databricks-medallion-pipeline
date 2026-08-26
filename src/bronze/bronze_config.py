@@ -1,8 +1,8 @@
 """Shared configuration and helpers for Bronze layer ingestion.
 
-Provides DBFS path resolution for source CSV staging (to_process/processed),
-CSV schemas, ingestion metadata helpers, Delta write utilities, and
-row-count validation.
+Provides Unity Catalog volume / DBFS path resolution for CSV staging
+(to_process/processed), CSV schemas, ingestion metadata helpers, Delta
+write utilities, and row-count validation.
 """
 
 from __future__ import annotations
@@ -25,27 +25,54 @@ if TYPE_CHECKING:
 BRONZE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BRONZE_DIR.parent.parent
 
+# Unity Catalog volume defaults (override via environment variables if needed).
+DEFAULT_VOLUME_CATALOG = os.environ.get("BRONZE_VOLUME_CATALOG", "workspace")
+DEFAULT_VOLUME_SCHEMA = os.environ.get("BRONZE_VOLUME_SCHEMA", "default")
+DEFAULT_VOLUME_NAME = os.environ.get("BRONZE_VOLUME_NAME", "medalion")
 
-def _default_dbfs_base_path() -> str:
-    """Return the default DBFS base path for the current runtime.
+DEFAULT_DATABRICKS_VOLUME_BASE = (
+    f"/Volumes/{DEFAULT_VOLUME_CATALOG}/{DEFAULT_VOLUME_SCHEMA}/{DEFAULT_VOLUME_NAME}"
+)
+DEFAULT_LOCAL_INGESTION_BASE = "dbfs:/FileStore/medallion/ingestion"
+DEFAULT_LOCAL_BRONZE_BASE = str(REPO_ROOT / "delta" / "bronze")
+
+
+def _is_databricks_runtime() -> bool:
+    """Return whether the code is executing on a Databricks cluster."""
+    return "DATABRICKS_RUNTIME_VERSION" in os.environ
+
+
+def _default_ingestion_base_path() -> str:
+    """Return the default base path for CSV staging (to_process / processed).
 
     Returns:
-        A DBFS URI on Databricks, or a ``dbfs:/`` URI mapped locally for dev.
+        Unity Catalog volume path on Databricks, local DBFS simulation path otherwise.
     """
-    if "DATABRICKS_RUNTIME_VERSION" in os.environ:
-        return "dbfs:/FileStore/medallion/ingestion"
-    return "dbfs:/FileStore/medallion/ingestion"
+    if _is_databricks_runtime():
+        return DEFAULT_DATABRICKS_VOLUME_BASE
+    return DEFAULT_LOCAL_INGESTION_BASE
 
 
-# DBFS staging paths — override via environment variables on Databricks.
-DBFS_BASE_PATH = os.environ.get("BRONZE_DBFS_BASE_PATH", _default_dbfs_base_path())
+def _default_bronze_base_path() -> str:
+    """Return the default base path for Bronze Delta table storage.
+
+    Returns:
+        Volume-backed bronze folder on Databricks, local delta folder otherwise.
+    """
+    if _is_databricks_runtime():
+        return f"{DEFAULT_DATABRICKS_VOLUME_BASE}/bronze"
+    return DEFAULT_LOCAL_BRONZE_BASE
+
+
+# Ingestion staging paths — override via environment variables when needed.
+DBFS_BASE_PATH = os.environ.get("BRONZE_DBFS_BASE_PATH", _default_ingestion_base_path())
 TO_PROCESS_FOLDER = os.environ.get("BRONZE_TO_PROCESS_FOLDER", "to_process")
 PROCESSED_FOLDER = os.environ.get("BRONZE_PROCESSED_FOLDER", "processed")
 
-BRONZE_BASE_PATH = os.environ.get("BRONZE_BASE_PATH", str(REPO_ROOT / "delta" / "bronze"))
+BRONZE_BASE_PATH = os.environ.get("BRONZE_BASE_PATH", _default_bronze_base_path())
 USE_MANAGED_TABLES = os.environ.get(
     "BRONZE_USE_MANAGED_TABLES",
-    "true" if "DATABRICKS_RUNTIME_VERSION" in os.environ else "false",
+    "true" if _is_databricks_runtime() else "false",
 ).lower() == "true"
 
 CUSTOMERS_SOURCE_SCHEMA: StructTypeType = StructType(
@@ -168,23 +195,25 @@ def is_databricks_runtime() -> bool:
     Returns:
         True when ``DATABRICKS_RUNTIME_VERSION`` is present in the environment.
     """
-    return "DATABRICKS_RUNTIME_VERSION" in os.environ
+    return _is_databricks_runtime()
 
 
 def to_local_filesystem_path(path: str) -> Path:
-    """Map a DBFS URI to a local filesystem path for offline development.
+    """Map a DBFS or Volume URI to a local filesystem path for offline development.
 
     Args:
-        path: DBFS URI (for example, ``dbfs:/FileStore/...``).
+        path: DBFS URI, Unity Catalog volume path, or filesystem path.
 
     Returns:
-        A local ``Path`` under the repository ``dbfs/`` directory.
+        A local ``Path`` under the repository for simulated Databricks storage.
     """
     if path.startswith("dbfs:"):
         relative_path = path[len("dbfs:") :].lstrip("/")
         return REPO_ROOT / "dbfs" / relative_path
     if path.startswith("/dbfs/"):
         return REPO_ROOT / "dbfs" / path[len("/dbfs/") :]
+    if path.startswith("/Volumes/"):
+        return REPO_ROOT / "dbfs" / "volumes" / path[len("/Volumes/") :]
     return Path(path)
 
 
