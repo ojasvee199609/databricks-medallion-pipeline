@@ -124,12 +124,8 @@ These two sums should match within rounding tolerance.
 
 ## 4. Screenshot placeholder
 
-> **TODO:** Add a screenshot of the finished dashboard from your Databricks workspace here.
->
-> Suggested filename: `docs/dashboard-screenshot.png` (or paste an image into your submission doc).
->
-> The live dashboard exists only in the Databricks UI — it is not stored as a file in this repo.
-
+> Screenshots have been placed in the below mentioned folder path:
+databricks-medallion-pipeline/src/dashboard/
 ---
 
 ## Related files
