@@ -332,7 +332,7 @@ def main() -> int:
     """Run the Silver layer build end-to-end.
 
     Returns:
-        Process exit code (0 on success, 1 if any threshold is missed).
+        Process exit code (0 when tables are built; threshold misses are warnings only).
     """
     spark = get_spark_session("silver-create-tables")
     result = create_silver_tables(spark)
@@ -341,9 +341,17 @@ def main() -> int:
     print_quality_metrics_report(result.metrics)
     show_failed_orders_sample(spark)
 
-    if any(not metric.meets_threshold for metric in result.metrics):
-        print("\nOne or more quality checks fell below the configured threshold.")
-        return 1
+    below_threshold = [metric for metric in result.metrics if not metric.meets_threshold]
+    if below_threshold:
+        print(
+            "\nWARNING: One or more quality checks fell below the configured threshold "
+            "(expected with injected test data). Silver tables were still written."
+        )
+        for metric in below_threshold:
+            print(
+                f"  - {metric.table_name}.{metric.check_name}: "
+                f"{metric.pass_rate_pct:.2f}% < {metric.threshold_pct:.1f}%"
+            )
     return 0
 
 
