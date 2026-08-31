@@ -1,0 +1,35 @@
+{
+  "name": "Data_generation",
+  "email_notifications": {
+    "no_alert_for_skipped_runs": false
+  },
+  "webhook_notifications": {},
+  "timeout_seconds": 0,
+  "max_concurrent_runs": 1,
+  "tasks": [
+    {
+      "task_key": "Data_Generation",
+      "run_if": "ALL_SUCCESS",
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/ojasvee.bajra@tothenew.com/databricks-medallion-pipeline/src/data_generation/Data_gen_notebook",
+        "source": "WORKSPACE"
+      },
+      "timeout_seconds": 0,
+      "email_notifications": {},
+      "webhook_notifications": {},
+      "disabled": false
+    }
+  ],
+  "queue": {
+    "enabled": true
+  },
+  "environments": [
+    {
+      "environment_key": "Default",
+      "spec": {
+        "environment_version": "5"
+      }
+    }
+  ],
+  "performance_target": "PERFORMANCE_OPTIMIZED"
+}

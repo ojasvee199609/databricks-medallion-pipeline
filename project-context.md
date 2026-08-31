@@ -147,6 +147,7 @@ Databricks SQL Dashboard with 3+ tiles:
 - Dashboard with 3+ working visualizations
 - README with setup instructions that work end-to-end from a clean clone
 - At least one test tier (data quality tests and/or pipeline tests)
+- `test_data_quality.py` — Silver flag counts vs injected defect constants
 - Full AI prompt history and lifecycle documentation (this is treated
   as equally important as the code — see .cursorrules)
 

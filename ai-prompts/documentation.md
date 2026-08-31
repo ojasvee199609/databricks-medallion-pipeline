@@ -22,14 +22,10 @@ tree view of the result.
 - Added a `.gitignore` proactively (not in spec, but appropriate —
   excludes __pycache__, .venv, checkpoint dirs, etc.)
 
-✗ **What needed fixing:**
-- Nothing — no renamed, missing, or misplaced files
+## Remaining documentation work
 
 △ **What you verified (not just trusted):**
 - Ran `tree` locally and diffed the output line-by-line against the
   required structure in the project brief before committing
 - Confirmed all 7 ai-prompts/ files were created individually (not
   collapsed into one file, which is an easy shortcut AI sometimes takes)
-
-**FINAL DECISION:** Accepted scaffold as-is, no corrections needed.
-Committed as initial commit "chore: scaffold repo structure per spec".

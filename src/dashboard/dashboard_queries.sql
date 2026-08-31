@@ -49,9 +49,15 @@ ORDER BY
 
 -- -----------------------------------------------------------------------------
 -- QUERY 3: Pie chart — Customer segmentation
--- Visualization: Pie chart (category = segment_type, value = customer_count)
--- Shows the share of customers in each behavioral segment (High-Value,
--- Repeat, One-Time, Inactive) derived from PASS-order behavior in Gold.
+-- Visualization: Pie chart
+--   Label / dimension: segment_type
+--   Measure / value:    customer_count  (aggregation = SUM, NOT COUNT)
+--
+-- IMPORTANT (Databricks UI): If every slice shows ~25%, the chart is counting
+-- query ROWS (4 segments) instead of customer_count. Set Measure to
+-- SUM(customer_count), not COUNT(*) or COUNT of rows.
+--
+-- Expected approximate shares: Repeat ~80%, High-Value ~20%, One-Time/Inactive ~0%.
 -- -----------------------------------------------------------------------------
 SELECT
     segment_type,
